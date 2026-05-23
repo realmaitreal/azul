@@ -10,6 +10,7 @@ import { SourcemapGenerator } from "./sourcemap/generator.js";
 import { log } from "./util/log.js";
 import { config, initializeConfig } from "./config.js";
 import type { StudioMessage } from "./ipc/messages.js";
+import { generateConstructorScript } from "./util/scriptify.js";
 
 /**
  * Main orchestrator for the Azul daemon
@@ -51,8 +52,13 @@ export class SyncDaemon {
   private setupHandlers(): void {
     // Handle messages from Studio (WebSocket)
     this.ipc.onMessage((message) => this.handleStudioMessage(message));
-    this.ipc.onHandshake(() => {
-      this.ipc.requestSnapshot();
+    this.ipc.onHandshake((msg) => {
+      if (msg.settings?.scriptifyInstances !== undefined) {
+        config.scriptifyInstances = msg.settings.scriptifyInstances;
+      }
+      this.ipc.requestSnapshot({
+        includeProperties: config.scriptifyInstances,
+      });
     });
 
     // Handle file changes from filesystem
@@ -98,6 +104,10 @@ export class SyncDaemon {
 
       case "deleted":
         this.handleDeleted(message.data);
+        break;
+
+      case "settingsUpdate":
+        this.handleSettingsUpdate(message.settings);
         break;
 
       case "ping":
@@ -222,6 +232,13 @@ export class SyncDaemon {
       this.fileWriter.writeScript(scriptNode);
     }
 
+    // In scriptify mode, also write non-script instances as constructor scripts
+    if (config.scriptifyInstances && !this.isScriptClass(node.className) && node.path.length > 0) {
+      const filePath = this.fileWriter.getFilePath(node);
+      this.fileWatcher.suppressNextChange(filePath, generateConstructorScript(node));
+      this.fileWriter.writeInstanceNode(node);
+    }
+
     const shouldUpdateSourcemap =
       update.isNew ||
       update.pathChanged ||
@@ -261,16 +278,28 @@ export class SyncDaemon {
 
     // Capture all script descendants (and the node itself if script) before we delete the tree nodes
     const scriptsToDelete: { guid: string; filePath: string | null }[] = [];
-    const collectScript = (scriptNode: TreeNode): void => {
-      const filePath = this.fileWriter.getFilePath(scriptNode);
-      scriptsToDelete.push({ guid: scriptNode.guid, filePath });
+    const collectNode = (n: TreeNode): void => {
+      const filePath = this.fileWriter.getFilePath(n);
+      scriptsToDelete.push({ guid: n.guid, filePath });
     };
 
     if (this.isScriptClass(node.className)) {
-      collectScript(node);
+      collectNode(node);
     }
     for (const child of this.tree.getDescendantScripts(node.guid)) {
-      collectScript(child);
+      collectNode(child);
+    }
+
+    // In scriptify mode, also collect non-script instance files for deletion
+    if (config.scriptifyInstances) {
+      if (!this.isScriptClass(node.className) && node.path.length > 0) {
+        collectNode(node);
+      }
+      for (const child of this.tree.getDescendants(node.guid)) {
+        if (!this.isScriptClass(child.className)) {
+          collectNode(child);
+        }
+      }
     }
 
     const pathSegments = node.path;
@@ -313,6 +342,21 @@ export class SyncDaemon {
   }
 
   /**
+   * Apply settings pushed from the Studio plugin
+   */
+  private handleSettingsUpdate(settings: { scriptifyInstances?: boolean }): void {
+    if (typeof settings.scriptifyInstances === "boolean") {
+      const prev = config.scriptifyInstances;
+      config.scriptifyInstances = settings.scriptifyInstances;
+      log.info(`scriptifyInstances set to ${config.scriptifyInstances} (via Studio)`);
+
+      if (!prev && config.scriptifyInstances) {
+        this.ipc.requestSnapshot({ includeProperties: true });
+      }
+    }
+  }
+
+  /**
    * Handle file change from filesystem
    */
   private handleFileChange(filePath: string, source: string): void {
@@ -324,8 +368,17 @@ export class SyncDaemon {
         `File changed externally: ${path.relative(this.fileWriter.getBaseDir(), filePath)}`,
       );
 
-      // Same-source anti-echo should be handled in watcher.ts, this is just in case
       const node = this.tree.getNode(guid);
+
+      // Constructor scripts for non-script instances are one-way (Studio → filesystem only)
+      if (node && !this.isScriptClass(node.className)) {
+        log.debug(
+          `Skipping Studio patch for non-script instance: ${path.relative(this.fileWriter.getBaseDir(), filePath)}`,
+        );
+        return;
+      }
+
+      // Same-source anti-echo should be handled in watcher.ts, this is just in case
       if (node?.source === source) {
         log.debug(
           `Skipping Studio patch for unchanged file: ${path.relative(this.fileWriter.getBaseDir(), filePath)}.`,

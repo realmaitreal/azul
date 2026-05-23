@@ -38,6 +38,9 @@ export interface AzulConfig {
 
   /** Check for Daemon updates? (Uses NPM API) */
   checkForUpdates: boolean;
+
+  /** Serialize all instances (not just scripts) as Lua constructor scripts */
+  scriptifyInstances: boolean;
 }
 
 export const defaultConfig: Readonly<AzulConfig> = {
@@ -50,6 +53,7 @@ export const defaultConfig: Readonly<AzulConfig> = {
   deleteOrphansOnConnect: true,
   suffixModuleScripts: false,
   checkForUpdates: true,
+  scriptifyInstances: false,
 };
 
 export const config: AzulConfig = { ...defaultConfig };
@@ -178,6 +182,10 @@ function sanitizeConfig(input: Record<string, unknown>): Partial<AzulConfig> {
 
   if (typeof input.checkForUpdates === "boolean") {
     sanitized.checkForUpdates = input.checkForUpdates;
+  }
+
+  if (typeof input.scriptifyInstances === "boolean") {
+    sanitized.scriptifyInstances = input.scriptifyInstances;
   }
 
   return sanitized;

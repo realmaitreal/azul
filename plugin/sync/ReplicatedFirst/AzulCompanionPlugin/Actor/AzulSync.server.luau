@@ -48,6 +48,9 @@ local uiCallbacks: UI.CallbackFunctions = {
 		)
 		Config[key] = value
 		if key == "SERVICE_LIST" then session:rebuildServiceSet() end
+		if key == "SCRIPTIFY_INSTANCES" then
+			session:sendSettingsUpdate({ scriptifyInstances = value == true })
+		end
 	end,
 	onSettingsScopeChanged = function(newScope)
 		session:onSettingsScopeChanged(newScope)

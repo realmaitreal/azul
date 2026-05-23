@@ -26,6 +26,7 @@ configTable = {
 
 	DEBUG_MODE = false,
 	SILENT_MODE = false,
+	SCRIPTIFY_INSTANCES = false,
 }
 
 return configTable

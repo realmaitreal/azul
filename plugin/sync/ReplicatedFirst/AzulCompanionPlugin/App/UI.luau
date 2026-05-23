@@ -67,6 +67,7 @@ type AzulUI = {
 	syncEnabled: fusion.Value<boolean>,
 	debugMode: fusion.Value<boolean>,
 	silentMode: fusion.Value<boolean>,
+	scriptifyInstances: fusion.Value<boolean>,
 	settingsScopeValue: fusion.Value<string>,
 	listTypeValue: fusion.Value<string>,
 
@@ -225,6 +226,7 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 	self.syncEnabled = Value(false)
 	self.debugMode = Value(Config.DEBUG_MODE)
 	self.silentMode = Value(Config.SILENT_MODE)
+	self.scriptifyInstances = Value(Config.SCRIPTIFY_INSTANCES)
 	self.settingsScopeValue = Value(settingsScope == Enums.scope.GLOBAL and "Global" or "Project")
 	self.listTypeValue = Value(Config.LIST_TYPE == Enums.listType.WHITELIST and "Whitelist" or "Blacklist")
 
@@ -326,6 +328,10 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 									end
 								end),
 								infoText("Enables verbose logging in the output console."),
+								labeledToggle("Scriptify Instances", self.scriptifyInstances, function(newValue)
+									self.callbacks.onConfigChanged("SCRIPTIFY_INSTANCES", newValue)
+								end),
+								infoText("Serialize all instances as Lua constructor scripts (e.g. <font color=\"#aaaaff\">Instance.new(\"ScreenGui\")</font>). Useful for AI agents building GUIs."),
 								Text({
 									Text = "Settings Scope",
 									TextSize = Theme.TextSize.Small,
@@ -468,6 +474,7 @@ function UI:UpdateConfig()
 
 	self.debugMode:set(Config.DEBUG_MODE)
 	self.silentMode:set(Config.SILENT_MODE)
+	self.scriptifyInstances:set(Config.SCRIPTIFY_INSTANCES)
 	self.settingsScopeValue:set(if self.settingsScope == Enums.scope.GLOBAL then "Global" else "Project")
 	self.listTypeValue:set(if Config.LIST_TYPE == Enums.listType.WHITELIST then "Whitelist" else "Blacklist")
 

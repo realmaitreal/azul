@@ -1,6 +1,6 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { log } from "../util/log.js";
-import type { StudioMessage, DaemonMessage } from "./messages.js";
+import type { StudioMessage, DaemonMessage, HandshakeMessageStudio } from "./messages.js";
 import type { SnapshotRequestOptions } from "./messages.js";
 import type { Server as HttpServer } from "http";
 
@@ -15,7 +15,7 @@ export class IPCServer {
   private client: WebSocket | null = null;
   private messageHandler: MessageHandler | null = null;
   private connectionHandler: (() => void) | null = null;
-  private handshakeHandler: (() => void) | null = null;
+  private handshakeHandler: ((msg: HandshakeMessageStudio) => void) | null = null;
   private requestSnapshotOnConnect: boolean;
   private pingIntervals = new Map<WebSocket, NodeJS.Timeout>();
   private handshakeComplete = false;
@@ -67,7 +67,7 @@ export class IPCServer {
             if (!this.handshakeComplete) {
               this.handshakeComplete = true;
               if (this.handshakeHandler) {
-                this.handshakeHandler();
+                this.handshakeHandler(message);
               }
             }
             this.send({ type: "handshakeAck" });
@@ -151,11 +151,8 @@ export class IPCServer {
   /**
    * Register a handler that fires when Studio completes the handshake
    */
-  public onHandshake(handler: () => void): void {
+  public onHandshake(handler: (msg: HandshakeMessageStudio) => void): void {
     this.handshakeHandler = handler;
-    if (this.handshakeComplete) {
-      handler();
-    }
   }
 
   /**

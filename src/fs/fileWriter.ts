@@ -3,6 +3,7 @@ import * as path from "path";
 import { TreeNode } from "./treeManager.js";
 import { config } from "../config.js";
 import { log } from "../util/log.js";
+import { generateConstructorScript } from "../util/scriptify.js";
 
 /**
  * Mapping of GUID to file path
@@ -36,17 +37,18 @@ export class FileWriter {
     this.fileMappings.clear();
     this.pathToGuid.clear();
 
-    // Collect all script nodes for batch writing
-    const scriptNodes: TreeNode[] = [];
+    // Collect nodes to write
+    const nodesToWrite: TreeNode[] = [];
     for (const node of nodes.values()) {
-      if (this.isScriptNode(node)) {
-        scriptNodes.push(node);
+      if (node.path.length === 0) continue; // Skip synthetic root
+      if (this.isScriptNode(node) || config.scriptifyInstances) {
+        nodesToWrite.push(node);
       }
     }
 
-    this.writeBatch(scriptNodes);
+    this.writeBatch(nodesToWrite);
 
-    log.success(`Wrote ${this.fileMappings.size} scripts to filesystem`);
+    log.success(`Wrote ${this.fileMappings.size} files to filesystem`);
   }
 
   /**
@@ -54,15 +56,23 @@ export class FileWriter {
    */
   public writeBatch(nodes: TreeNode[]): void {
     // Pre-compute all file paths and collect writes
-    const writes: { node: TreeNode; filePath: string; dirPath: string }[] = [];
+    const writes: { node: TreeNode; filePath: string; dirPath: string; content: string }[] = [];
     const dirsToCreate = new Set<string>();
     const batchPathToGuid = new Map<string, string>();
 
     for (const node of nodes) {
-      if (!this.isScriptNode(node) || node.source === undefined) continue;
+      let content: string;
+      if (this.isScriptNode(node)) {
+        if (node.source === undefined) continue;
+        content = node.source;
+      } else if (config.scriptifyInstances) {
+        content = generateConstructorScript(node);
+      } else {
+        continue;
+      }
       const filePath = this.getFilePathWithCollisionMap(node, batchPathToGuid);
       const dirPath = path.dirname(filePath);
-      writes.push({ node, filePath, dirPath });
+      writes.push({ node, filePath, dirPath, content });
       dirsToCreate.add(dirPath);
       batchPathToGuid.set(path.resolve(filePath), node.guid);
     }
@@ -75,9 +85,9 @@ export class FileWriter {
       this.ensureDirectory(dir);
     }
 
-    for (const { node, filePath } of writes) {
+    for (const { node, filePath, content } of writes) {
       try {
-        fs.writeFileSync(filePath, node.source!, "utf-8");
+        fs.writeFileSync(filePath, content, "utf-8");
 
         this.fileMappings.set(node.guid, {
           guid: node.guid,
@@ -143,6 +153,47 @@ export class FileWriter {
   }
 
   /**
+   * Write or update a non-script instance as a constructor script (scriptifyInstances mode)
+   */
+  public writeInstanceNode(node: TreeNode): string | null {
+    if (this.isScriptNode(node)) return this.writeScript(node);
+    if (!config.scriptifyInstances) return null;
+
+    const existingMapping = this.fileMappings.get(node.guid);
+    const filePath = this.getFilePath(node);
+    const dirPath = path.dirname(filePath);
+    const previousPath = existingMapping?.filePath;
+    const pathChanged = previousPath && previousPath !== filePath;
+
+    this.ensureDirectory(dirPath);
+
+    const content = generateConstructorScript(node);
+
+    try {
+      fs.writeFileSync(filePath, content, "utf-8");
+
+      if (pathChanged && previousPath && fs.existsSync(previousPath)) {
+        fs.unlinkSync(previousPath);
+        this.pathToGuid.delete(path.resolve(previousPath));
+        this.cleanupParentsIfEmpty(path.dirname(previousPath));
+      }
+
+      this.fileMappings.set(node.guid, {
+        guid: node.guid,
+        filePath,
+        className: node.className,
+      });
+      this.pathToGuid.set(path.resolve(filePath), node.guid);
+
+      log.script(this.getRelativePath(filePath), "updated");
+      return filePath;
+    } catch (error) {
+      log.error(`Failed to write instance ${filePath}:`, error);
+      return null;
+    }
+  }
+
+  /**
    * Delete a script file
    */
   public deleteScript(guid: string): boolean {
@@ -188,12 +239,14 @@ export class FileWriter {
     node: TreeNode,
     batchCollisionMap?: Map<string, string>,
   ): string {
-    // Build the path from the node's hierarchy. For scripts, we only use the parent path
-    // as directories, then add the script file name. This prevents creating an extra
-    // folder named after the script itself.
+    // Build the path from the node's hierarchy. For scripts and scriptified instances,
+    // we use the parent path as directories and add the file name. This prevents creating
+    // an extra folder named after the node itself.
+    const isScript = this.isScriptNode(node);
+    const isScriptified = !isScript && config.scriptifyInstances;
     const parts: string[] = [];
 
-    const dirSegments = this.isScriptNode(node)
+    const dirSegments = (isScript || isScriptified)
       ? node.path.slice(0, Math.max(0, node.path.length - 1))
       : node.path;
 
@@ -201,10 +254,10 @@ export class FileWriter {
       parts.push(this.sanitizeName(segment));
     }
 
-    // If this is a script, add the script name as a file
-    if (this.isScriptNode(node)) {
-      const scriptName = this.getScriptFileName(node);
-      parts.push(scriptName);
+    if (isScript) {
+      parts.push(this.getScriptFileName(node));
+    } else if (isScriptified) {
+      parts.push(this.sanitizeName(node.name) + config.scriptExtension);
     }
 
     const desiredPath = path.join(this.baseDir, ...parts);

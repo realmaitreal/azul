@@ -11,6 +11,9 @@ export interface TreeNode {
   path: string[];
   parentGuid?: string | null;
   source?: string;
+  properties?: Record<string, unknown>;
+  attributes?: Record<string, unknown>;
+  tags?: string[];
   children: Map<string, TreeNode>;
   parent?: TreeNode;
 }
@@ -111,6 +114,9 @@ export class TreeManager {
       existing.path = instance.path;
       existing.parentGuid = nextParentGuid;
       existing.source = nextSource;
+      if (instance.properties !== undefined) existing.properties = instance.properties;
+      if (instance.attributes !== undefined) existing.attributes = instance.attributes;
+      if (instance.tags !== undefined) existing.tags = instance.tags;
 
       if (pathChanged || nameChanged || parentChanged) {
         this.reparentNode(existing, instance.path, nextParentGuid);
@@ -137,6 +143,9 @@ export class TreeManager {
       path: instance.path,
       parentGuid: incomingParentGuid,
       source: instance.source,
+      properties: instance.properties,
+      attributes: instance.attributes,
+      tags: instance.tags,
       children: new Map(),
     };
 
@@ -175,6 +184,9 @@ export class TreeManager {
         path: instance.path,
         parentGuid: instance.parentGuid ?? null,
         source: instance.source,
+        properties: instance.properties,
+        attributes: instance.attributes,
+        tags: instance.tags,
         children: new Map(),
       };
       this.nodes.set(instance.guid, node);
@@ -247,6 +259,24 @@ export class TreeManager {
         queue.push(grandchild);
       }
     }
+  }
+
+  public getDescendants(guid: string): TreeNode[] {
+    const start = this.nodes.get(guid);
+    if (!start) return [];
+
+    const result: TreeNode[] = [];
+    const stack: TreeNode[] = [...start.children.values()];
+
+    while (stack.length > 0) {
+      const node = stack.pop()!;
+      result.push(node);
+      for (const child of node.children.values()) {
+        stack.push(child);
+      }
+    }
+
+    return result;
   }
 
   public getDescendantScripts(guid: string): TreeNode[] {

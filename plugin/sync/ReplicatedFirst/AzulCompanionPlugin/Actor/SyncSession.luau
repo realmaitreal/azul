@@ -723,7 +723,9 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		self.handshakeComplete = false
 		repeat
 			self:debugPrint(`Attempting handshake with daemon... (try {tries} of {HANDSHAKE_MAX_RETRIES})`)
-			sendMessage("handshakeStudio", {})
+			sendMessage("handshakeStudio", {
+				settings = { scriptifyInstances = self.config.SCRIPTIFY_INSTANCES == true },
+			})
 
 			local startTime = tick()
 			while tick() - startTime < HANDSHAKE_TIMEOUT do
@@ -742,6 +744,10 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 
 	function self:reloadSourcemap()
 		sendFullSnapshot()
+	end
+
+	function self:sendSettingsUpdate(settings: { [string]: any })
+		sendMessage({ type = "settingsUpdate", settings = settings })
 	end
 
 	function self:startSync()

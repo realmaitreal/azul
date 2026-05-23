@@ -45,6 +45,7 @@ export type StudioPayloadMessage =
   | PingMessage
   | ClientDisconnect
   | PushConfigMessage
+  | SettingsUpdateMessage
   | HandshakeMessageStudio;
 
 export interface BatchMessage {
@@ -94,12 +95,22 @@ export interface PushConfigMessage {
   config: PushConfig;
 }
 
+export interface SettingsUpdateMessage {
+  type: "settingsUpdate";
+  settings: {
+    scriptifyInstances?: boolean;
+  };
+}
+
 export interface HandshakeAckMessage {
   type: "handshakeAck";
 }
 
 export interface HandshakeMessageStudio {
   type: "handshakeStudio";
+  settings?: {
+    scriptifyInstances?: boolean;
+  };
 }
 
 /**
