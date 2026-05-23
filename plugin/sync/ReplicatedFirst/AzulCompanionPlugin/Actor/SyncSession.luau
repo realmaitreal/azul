@@ -243,6 +243,19 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		scheduleBatchFlush()
 	end
 
+	local function queuePropertyUpdate(instance: Instance)
+		if self.suppressOutbound or not self.syncEnabled then return end
+		if not self.trackedInstances[instance] then return end
+
+		local data = AzulService.instanceToData(instance, self.trackedInstances, self.guidMap, self.usedGuids, {
+			includeProperties = true,
+		})
+		if not data then return end
+
+		self.pendingInstanceUpdates[data.guid] = data
+		scheduleBatchFlush()
+	end
+
 	local function queueScriptChange(payload)
 		if self.suppressOutbound or not self.syncEnabled then return end
 		if not payload or not payload.guid then return end
@@ -360,6 +373,16 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 				if self.syncEnabled then onScriptChanged(instance :: Script) end
 			end)
 			table.insert(self.connections, sourceConnection)
+		elseif self.config.SCRIPTIFY_INSTANCES then
+			local ok, propConn = pcall(function()
+				return instance.Changed:Connect(function(propertyName: string)
+					if propertyName == "Name" or propertyName == "Parent" then return end
+					queuePropertyUpdate(instance)
+				end)
+			end)
+			if ok and propConn then
+				table.insert(self.connections, propConn)
+			end
 		end
 	end
 
@@ -557,7 +580,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		self:infoPrint("Snapshot sent:", #instances, "instances (", scriptCount, "scripts )")
 
 		if self.syncEnabled then
-			if includeProperties or scriptsAndDescendantsOnly then
+			if scriptsAndDescendantsOnly then
 				self:debugPrint(
 					`Snapshot sent with options (includeProperties={tostring(includeProperties)}, scriptsAndDescendantsOnly={tostring(
 						scriptsAndDescendantsOnly

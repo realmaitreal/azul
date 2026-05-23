@@ -14,34 +14,41 @@ function serializeValue(value: unknown): string | null {
 
   if (value !== null && typeof value === "object") {
     const v = value as Record<string, unknown>;
-    switch (v.Type) {
+    switch (v.__type) {
       case "Color3":
-        return `Color3.new(${v.R}, ${v.G}, ${v.B})`;
+        return `Color3.new(${v.r}, ${v.g}, ${v.b})`;
       case "Vector3":
-        return `Vector3.new(${v.X}, ${v.Y}, ${v.Z})`;
+        return `Vector3.new(${v.x}, ${v.y}, ${v.z})`;
       case "Vector2":
-        return `Vector2.new(${v.X}, ${v.Y})`;
+        return `Vector2.new(${v.x}, ${v.y})`;
+      case "Vector2int16":
+        return `Vector2int16.new(${v.x}, ${v.y})`;
+      case "Vector3int16":
+        return `Vector3int16.new(${v.x}, ${v.y}, ${v.z})`;
       case "UDim":
-        return `UDim.new(${v.Scale}, ${v.Offset})`;
-      case "UDim2": {
-        const x = v.X as Record<string, unknown> | undefined;
-        const y = v.Y as Record<string, unknown> | undefined;
-        return `UDim2.new(${x?.Scale}, ${x?.Offset}, ${y?.Scale}, ${y?.Offset})`;
-      }
+        return `UDim.new(${v.scale}, ${v.offset})`;
+      case "UDim2":
+        return `UDim2.new(${v.xScale}, ${v.xOffset}, ${v.yScale}, ${v.yOffset})`;
       case "CFrame": {
-        const pos = v.Position as Record<string, unknown> | undefined;
-        if (pos) return `CFrame.new(${pos.X}, ${pos.Y}, ${pos.Z})`;
+        const c = v.components as number[] | undefined;
+        if (c && c.length >= 12) return `CFrame.new(${c.join(", ")})`;
         return null;
       }
       case "BrickColor":
-        if (v.Name) return `BrickColor.new("${v.Name}")`;
+        if (v.number !== undefined) return `BrickColor.new(${v.number})`;
         return null;
       case "EnumItem":
-        if (v.EnumType && v.Name) return `Enum.${v.EnumType}.${v.Name}`;
+        if (v.enumType && v.name) return `Enum.${v.enumType}.${v.name}`;
         return null;
       case "Font":
-        if (v.Family) return `Font.new("${v.Family}")`;
+        if (v.family) return `Font.new("${v.family}")`;
         return null;
+      case "Rect":
+        return `Rect.new(${v.minX}, ${v.minY}, ${v.maxX}, ${v.maxY})`;
+      case "NumberRange":
+        return `NumberRange.new(${v.min}, ${v.max})`;
+      case "PhysicalProperties":
+        return `PhysicalProperties.new(${v.density}, ${v.friction}, ${v.elasticity}, ${v.frictionWeight}, ${v.elasticityWeight})`;
     }
   }
 
